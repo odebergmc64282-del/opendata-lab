@@ -4,7 +4,9 @@
 > 版本：v1.0.0  
 > 日期：2026-10-28  
 > 状态：待四人确认  
-> **依赖：** `01_INTERFACE_CONTRACT.md`（接口行为以契约文件为准）
+> **依赖：** [接口契约（`docs/01_INTERFACE_CONTRACT.md`）](01_INTERFACE_CONTRACT.md)，接口行为以契约为准。
+>
+> 本次修订中的职责及验收调整待团队审查。
 
 ## 1. 规范的目标
 
@@ -17,14 +19,14 @@
 | 成员 | 主模块 | 负责文件 | 对其他成员的交付 |
 |---|---|---|---|
 | A（初学者） | 数据采集 | `collector.py`、`scripts/refresh.py`、`test_collector.py` | Open-Meteo 原始 JSON `dict` |
-| B（有基础） | 数据清洗与分析 | `cleaner.py`、`analytics.py`、`test_cleaner.py`、CI | 6 字段 `list[dict]`，维护契约文档 |
-| C（有基础） | 数据库与集成 | `repository.py`、`pipeline.py`、`test_repository.py` | 数据保存、条件查询与主流程集成 |
-| D（初学者） | 可视化界面 | `dashboard.py`、`app.py`、`test_dashboard.py` | Streamlit 页面、图表和 CSV |
+| B（有基础） | 数据清洗与分析 | `cleaner.py`、`analytics.py`、`test_cleaner.py`、`test_analytics.py`、CI 工作流 | 向 C 提供六字段 `list[dict]`，向 D 提供按城市分析结果，维护契约 |
+| C（有基础） | 数据库与集成 | `repository.py`、`pipeline.py`、`test_repository.py`、`test_pipeline.py`、公共配置及工程初始化 | 数据保存、条件查询，向 A/D 提供 `refresh_city()` |
+| D（初学者） | 可视化界面 | `dashboard.py`、`app.py`、`test_dashboard.py` | Streamlit 页面、图表和 CSV，使用 C 的查询/刷新及 B 的分析结果 |
 
-- **C** 负责项目首次初始化和主流程集成；**B** 负责协调接口变更；这不意味着 C 或 B 可不经审查直接改动其他人的代码。
+- C 负责 `pyproject.toml`、可编辑安装和 `dev` 依赖、主流程集成，以及 `config.py` 的初始建设和协调维护。B 负责 CI 工作流与接口契约维护，C 协助接入 CI。跨成员修改依照 Issue 与 PR 流程。
 - **每个人**至少交付一个 Python 主模块、一个测试文件、2 个 PR 和 1 次他人 PR Review。
-- 审核轮换建议：B 审 A、C 审 B、D 审 C、A 审 D（复杂代码可增加第二位 reviewer）。
-- 公共模块（`config.py`、`pyproject.toml`、`docs`、CI）修改前必须在 Issue 中通知所有人。
+- 审核轮换建议为 B 审 A、C 审 B、D 审 C、A 审 D。复杂代码可增加第二位审核人。当前项目负责人兼任 A/C，同一人不能以另一角色计为独立审查。每个 PR 至少由一位非作者审查。原定每人贡献要求保留，兼任角色时如何计入四人及课程贡献由团队确认。
+- 公共模块（`config.py`、`pyproject.toml`、`docs`、CI）修改前必须在 Issue 中通知所有人。各模块统一导入 `config.py` 的 `CITY_CONFIG`，城市项使用 `name`、`latitude`、`longitude`、`timezone`。数据库路径拟由 C 统一管理，建议使用 `DB_PATH: pathlib.Path`。名称、类型及默认路径由 C/B 在实现前确认。
 
 ## 3. 仓库目录（标准 `src` 布局）
 
@@ -34,7 +36,7 @@ opendata-lab/
 ├── src/
 │   └── opendata/
 │       ├── __init__.py
-│       ├── config.py           # 公共：城市配置、数据库路径
+│       ├── config.py           # C 维护的公共配置
 │       ├── collector.py        # A
 │       ├── cleaner.py          # B
 │       ├── analytics.py        # B
@@ -48,12 +50,13 @@ opendata-lab/
 │   │   └── sample_response.json
 │   ├── test_collector.py
 │   ├── test_cleaner.py
+│   ├── test_analytics.py
 │   ├── test_repository.py
 │   ├── test_dashboard.py
 │   └── test_pipeline.py
 ├── docs/
-│   ├── contracts.md            # 复制并维护正式接口契约
-│   ├── development-standards.md # 复制并维护本文件
+│   ├── 01_INTERFACE_CONTRACT.md          # 权威接口契约
+│   ├── 02_TEAM_DEVELOPMENT_STANDARD.md   # 权威开发规范
 │   ├── architecture.md
 │   └── windows-scheduler.md
 ├── .github/
@@ -83,14 +86,14 @@ python -m venv .venv
 
 1. Python 最低建议 3.12；四人保持一致的小版本范围及依赖锁定策略。
 2. 统一 UTF-8；缩进 **4 空格**；文件名和函数名 `snake_case`；类名 `PascalCase`；常量 `UPPER_SNAKE_CASE`。
-3. 五个对外接口必须写类型注解、docstring，保持接口契约中的参数和返回值不变。
+3. 五个核心接口及契约明确的公共辅助接口须写类型注解和 docstring，遵守契约所列参数和返回类型。
 4. 单个函数尽量只负责一件事；可分出校验、转换、日志等内部辅助函数。
 5. 不允许使用裸 `except:`；捕获明确异常并记录必要上下文，无法恢复的异常重新抛出。
 6. 公共函数不得使用 `print()` 代替错误处理；业务日志采用 `logging`，Streamlit 页面使用 `st.error()` 提示用户。
 7. 所有数据库 SQL 使用参数化查询；不提交口令、Token、私密配置。
-8. 不跨层直接访问其他人的内部私有函数（例如 `_validate_response`），依赖五个公开接口。
+8. 跨层调用使用五个核心接口及契约明确的公共辅助接口，依赖方向见[接口契约 §4](01_INTERFACE_CONTRACT.md#4-主流程与公共辅助接口拟议)。A/D 共用 `refresh_city()`，D 使用 C 的查询结果调用 `summarize_forecast()`。禁止跨层访问私有函数、传递 DataFrame、Timestamp、NaN 或 NumPy 标量。B、D 等模块可在内部使用 Pandas。
 9. 不将数据库文件、缓存、虚拟环境、临时 CSV、日志或编辑器工作目录提交到 Git。
-10. 每次提交前运行 `ruff check .` 与 `python -m pytest -q`。
+10. 每次提交前运行 `ruff check .` 与 `python -m pytest -q`。引导期尚无可运行的检查时按 §6.2 记录。
 
 **建议的公开函数文档格式：**
 
@@ -134,7 +137,7 @@ git commit -m "feat(collector): add forecast request [OD-06]"
 git push -u origin feature/OD-06-collector
 ```
 
-然后在 GitHub 建立 **目标分支为 `develop`** 的 Pull Request；通过审查和 CI 才能合并。`main` 只接收测试通过的 `develop` 版本。推荐为 `main` 和 `develop` 配置分支保护（审核、状态检查、禁止 force push）。GitHub 规则可参考 <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches>。
+功能 PR 以 `develop` 为目标，合并须满足 §6.2。对尚未合入的原文 PR 做独立文档修订时，可向原文分支发起堆叠 PR，在描述中标注依赖与合并顺序。`main` 只接收测试通过的 `develop` 版本。推荐为 `main` 和 `develop` 配置分支保护（审核、状态检查、禁止 force push）。GitHub 规则可参考 <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches>。
 
 **提交格式建议：** `type(scope): 简要说明 [OD-xx]`，常用 `type`：`feat`、`fix`、`test`、`docs`、`refactor`、`chore`。
 
@@ -184,12 +187,13 @@ Closes #<实际 GitHub Issue 编号>
 
 ## 接口契约变化
 - [ ] 无变化
-- [ ] 有变化，已同步 contracts.md 和测试，并完成受影响成员评审
+- [ ] 有变化，已更新 docs/01_INTERFACE_CONTRACT.md，并注明测试同步情况及受影响成员的评审状态
 
 ## 自测结果
 - [ ] python -m pytest -q 通过
 - [ ] ruff check . 通过
-- [ ] 在本机手动验证核心流程
+- [ ] 完成适用的本地或手动验证
+- 未执行项及原因（适用时记录引导期例外）
 
 ## 截图 / 日志（如涉及界面）
 
@@ -199,25 +203,29 @@ Closes #<实际 GitHub Issue 编号>
 
 `OD-06` 是团队任务编号，真实 GitHub Issue 可能是 `#12`、`#34` 等，不能将 OD 任务号误当成 GitHub Issue 编号。
 
-**PR 合并条件：** 关联 Issue 明确、改动范围合理、至少一名他人 Review、自动化测试与 Ruff 通过、文档和接口样例同步、无机密数据和真实数据库文件。
+**PR 合并条件：** 明确关联 Issue，限定改动范围，至少一名非作者审核，文档和适用的接口样例同步。不得包含机密数据或真实数据库。
+
+- **单模块 PR** 须通过该模块已有契约测试、本分支全部已有测试以及 Ruff。尚未开发的模块和对应测试按交付计划补齐。
+- **引导期例外** 仅适用于初始化或纯文档等尚无可运行 CI 的早期 PR。执行可用的本地检查并记录结果、未执行项和原因，合并前仍须人工审查。CI 未运行时明确记为未运行。
+- **首个功能 PR 合并前** 须已有可运行的最小 CI（pytest + Ruff）。启用 GitHub 分支保护前仍执行同样的质量检查。
 
 ## 7. 测试规范
 
 ### 7.1 测试层次
 
 - **单元测试：** 每位成员对自己模块的正常、异常和边界条件负责；使用 `pytest`。
-- **接口契约测试：** A/B/C/D 必须通过 `01_INTERFACE_CONTRACT.md` 的 CT-01～CT-20；改签名或字段必须更新相应测试。
+- **接口契约测试：** 适用的模块测试随开发提交。最终发布须通过[接口契约 §6](01_INTERFACE_CONTRACT.md#6-契约测试与最小验收)的 CT-01～CT-20、AC-01～AC-05、PC-01～PC-03、RC-01～RC-04，并完成模拟联调。契约行为变更同步相应测试。
 - **集成测试：** C 负责 A→B→C 完整链路，D 与 C 共同验证 C→D 页面；CI 默认不联网。
 - **人工演示：** 四人分别使用不同城市/日期筛选，测试刷新按钮、空数据、CSV 下载。
 
 ### 7.2 不得违反的测试规则
 
 1. 网络请求用 mock/fixture，CI 测试不依赖公网 Open-Meteo。
-2. SQLite 使用内存数据库或 `tmp_path`，不污染 `data/` 中的工作库。
+2. SQLite 测试使用 `tmp_path` 或适合连接生命周期的 `:memory:`。使用多个独立连接时优先用临时文件。禁止测试写入 `data/` 中的工作库。
 3. 测试必须可重复，多次运行结果一致，不依赖运行顺序。
 4. 测试断言行为，不只断言函数“没有报错”。
 5. 错误场景也必须测到：超时、数据异常、空查询、重复 UPSERT。
-6. 每个 PR 至少更新相关测试；纯文档 PR 可例外，但 CI 仍要通过。
+6. 功能 PR 同步相关测试。纯文档 PR 按 §6.2 执行适用检查，无可运行 CI 时记录引导期例外。
 
 ### 7.3 CI 最小命令
 
@@ -226,16 +234,16 @@ python -m pytest -q
 ruff check .
 ```
 
-C 和 B 在第 1/2 周建立可运行 CI 入口；第 4 周完善为 PR 必过检查。至少 20 项契约测试通过是最终验收标准，而不是每人只写一个 `assert True`。
+C 在初始化阶段提供安装配置和测试依赖，B 在首个功能 PR 合并前建立并验证上述 CI，C 协助接入。第 4 周可完善 GitHub 分支保护强制检查。最终验收按 §7.1 的全量用例与模拟联调执行。
 
 ## 8. 每周检查与交付
 
 | 周次 | 本周交付 | 最低检查点 |
 |---|---|---|
-| Week 1 | 工程骨架、契约和样本 | 四人能 clone、安装、运行最小项目；5 个接口签名冻结 |
+| Week 1 | 工程骨架、契约和样本 | 四人能 clone、安装、运行最小项目，确认后冻结五个核心签名 |
 | Week 2 | A/B/C/D 核心代码与测试 | 每人完成独立 PR，模块与模拟数据契约一致 |
 | Week 3 | 主流程、查询筛选、图表 | 模拟数据联调通过；真实网络请求也已手动验证 |
-| Week 4 | CLI、任务计划、CI、CSV、演示 | CT-01～CT-20 通过；4 人贡献证据齐全 |
+| Week 4 | CLI、任务计划、CI、CSV、演示 | §7.1 最终验收通过，四人贡献证据齐全 |
 
 **每周同步会 30 分钟：** 每人演示一个可运行结果，说清已完成、阻塞、下一步；所有阻塞在 Issue 留言，24 小时内应有人回应。
 
@@ -243,7 +251,7 @@ C 和 B 在第 1/2 周建立可运行 CI 入口；第 4 周完善为 PR 必过�
 
 ## 9. 契约变更与冲突处理
 
-接口变化一律遵守 `01_INTERFACE_CONTRACT.md` 第 7 节的提案和审批流程。出现以下情况时应停止盲目合并：
+接口变化一律遵守[接口契约 §7](01_INTERFACE_CONTRACT.md#7-接口变更控制必须遵守)的提案和审批流程。出现以下情况时应停止盲目合并：
 
 - A 将返回值 `dict` 改成 `list[dict]`；
 - B 将数据输出改成 `pd.DataFrame`，或改了字段名；
@@ -258,19 +266,19 @@ C 和 B 在第 1/2 周建立可运行 CI 入口；第 4 周完善为 PR 必过�
 - Windows 开发统一使用 PowerShell 或 VS Code 终端；Python 解释器必须指向项目的 `.venv`。
 - README 中分别列出 Windows 命令，不混用 Linux 的 `source .venv/bin/activate`。
 - 路径尽量使用 `pathlib.Path`，不要把某个成员机器上的 `C:\\Users\\...` 写死进代码。
-- Windows 计划任务由 A 在第 4 周实现，依赖 C 的 `pipeline`；脚本应使用项目环境中的 Python 完整路径执行。
+- Windows 计划任务由 A 在第 4 周实现，通过 `scripts/refresh.py` 调用 C 的 `pipeline.refresh_city()`；脚本应使用项目环境中的 Python 完整路径执行。
 - `.gitignore` 至少包含：`.venv/`、`__pycache__/`、`.pytest_cache/`、`.ruff_cache/`、`.env`、`data/*.db`、`data/*.sqlite*`、`*.log`。
 
 ## 11. 四人启动确认清单
 
 - [ ] 四人确认成员 A/B/C/D 的真实负责人。
 - [ ] 项目统一选择 Python 3.12+；四人各自在本地成功安装依赖。
-- [ ] `docs/contracts.md` 与本文件入库，并提交第一次审查 PR。
+- [ ] `docs/01_INTERFACE_CONTRACT.md` 和 `docs/02_TEAM_DEVELOPMENT_STANDARD.md` 入库并提交审查。
 - [ ] B 给出统一原始样本和标准输出样例。
-- [ ] C 配置 `src` 包导入、SQLite 路径及集成测试基础。
+- [ ] C 配置 `src` 包导入、可编辑安装和 `dev` 依赖，协调公共城市配置、SQLite 路径及集成测试基础。
 - [ ] A/D 在未完成真实模块时使用 fixture/mock 开发，不等待他人。
-- [ ] GitHub 已启用 Issues、PR、`develop` 分支及基本自动化检查。
+- [ ] GitHub 已启用 Issues、PR、`develop` 分支，B 已在首个功能 PR 合并前接入最小 CI。
 
 ---
 
-**适用原则：** 本文件规定团队工作方式；涉及字段、函数、异常、排序、数据写入行为时，统一引用正式接口契约 `01_INTERFACE_CONTRACT.md`，不在群聊中重复定义另一套接口。
+**适用原则：** 本文件规定团队工作方式；涉及字段、函数、异常、排序、数据写入行为时，统一引用[接口契约（`docs/01_INTERFACE_CONTRACT.md`）](01_INTERFACE_CONTRACT.md)，不在群聊中重复定义另一套接口。
